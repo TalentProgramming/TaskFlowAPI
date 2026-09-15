@@ -6,6 +6,7 @@ import os
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+app.url_map.strict_slashes = False
 
 SECRET = os.environ.get("TOKEN_SECRET", "taskflow-classroom")
 DEMO_EMAIL = "student@example.com"
@@ -51,14 +52,29 @@ def email_from_auth() -> str | None:
         email = base64.urlsafe_b64decode(padded).decode()
     except (ValueError, UnicodeDecodeError):
         return None
-    expected = issue_token(email)
-    if not hmac.compare_digest(token, expected):
+    if not hmac.compare_digest(token, issue_token(email)):
         return None
     return email
 
 
 def unauthorized():
     return jsonify({"message": "Unauthorized"}), 401
+
+
+def route(path, **kwargs):
+    def wrapper(fn):
+        for prefix in ("", "/v1"):
+            suffix = prefix.strip("/") or "root"
+            methods = "".join(kwargs.get("methods", ["GET"]))
+            app.add_url_rule(
+                f"{prefix}{path}" if path != "/" else (prefix or "/"),
+                endpoint=f"{fn.__name__}_{suffix}_{methods}",
+                view_func=fn,
+                **kwargs,
+            )
+        return fn
+
+    return wrapper
 
 
 @app.after_request
@@ -69,31 +85,45 @@ def add_cors(response):
     return response
 
 
-@app.route("/", methods=["GET"])
-@app.route("/v1", methods=["GET"])
+@app.errorhandler(404)
+def not_found(_error):
+    return jsonify({"message": "Not found", "try": "/v1 or POST /auth/login"}), 404
+
+
+@app.errorhandler(405)
+def method_not_allowed(_error):
+    return jsonify({"message": "This path needs a different HTTP method", "login": "POST /auth/login"}), 405
+
+
+@route("/", methods=["GET"])
 def index():
     return jsonify(
         {
             "name": "TaskFlow classroom API",
-            "base": "/v1",
+            "ok": True,
             "demo": {"email": DEMO_EMAIL, "password": DEMO_PASSWORD},
             "routes": [
-                "POST /v1/auth/login",
-                "GET /v1/profile/me",
-                "PUT /v1/profile/me",
-                "POST /v1/profile/me/photo",
-                "GET /v1/products?q=&page=",
+                "POST /auth/login",
+                "GET /profile/me",
+                "PUT /profile/me",
+                "POST /profile/me/photo",
+                "GET /products?q=&page=",
             ],
         }
     )
 
 
-@app.route("/v1/<path:_unused>", methods=["OPTIONS"])
-def preflight(_unused):
-    return ("", 204)
+@route("/auth/login", methods=["GET"])
+def login_help():
+    return jsonify(
+        {
+            "message": "Login is POST, not GET",
+            "body": {"email": DEMO_EMAIL, "password": DEMO_PASSWORD},
+        }
+    )
 
 
-@app.post("/v1/auth/login")
+@route("/auth/login", methods=["POST"])
 def login():
     body = request.get_json(silent=True) or {}
     email = str(body.get("email", "")).strip()
@@ -108,14 +138,14 @@ def login():
     return jsonify({"message": "Invalid credentials"}), 401
 
 
-@app.get("/v1/profile/me")
+@route("/profile/me", methods=["GET"])
 def get_profile():
     if email_from_auth() is None:
         return unauthorized()
     return jsonify(profile)
 
 
-@app.put("/v1/profile/me")
+@route("/profile/me", methods=["PUT"])
 def update_profile():
     if email_from_auth() is None:
         return unauthorized()
@@ -126,7 +156,7 @@ def update_profile():
     return jsonify(profile)
 
 
-@app.post("/v1/profile/me/photo")
+@route("/profile/me/photo", methods=["POST"])
 def upload_photo():
     if email_from_auth() is None:
         return unauthorized()
@@ -136,7 +166,7 @@ def upload_photo():
     return jsonify(profile)
 
 
-@app.get("/v1/products")
+@route("/products", methods=["GET"])
 def products():
     query = request.args.get("q", "").strip().lower()
     if query == "error":
