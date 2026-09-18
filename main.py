@@ -19,6 +19,13 @@ profile = {
     "photoUrl": None,
 }
 
+POSTS = [
+    {"id": "t-1", "title": "Prepare Chapter 8 lab", "note": "Login, then GET profile and GET posts."},
+    {"id": "t-2", "title": "Review Resource states", "note": "Loading, Success, Error, Empty."},
+    {"id": "t-3", "title": "Practice interceptors", "note": "Bearer is added once. Not in the ViewModel."},
+    {"id": "t-4", "title": "Hit the live host", "note": "staging-api-7jb0 or taskflowapiprod on Render."},
+]
+
 PRODUCTS = [
     {"product_id": "p-1", "title": "Notebook Pro", "type": "Stationery", "amount": 4.5},
     {"product_id": "p-2", "title": "Task Stickers", "type": "Stationery", "amount": 2.0},
@@ -105,6 +112,7 @@ def index():
             "routes": [
                 "POST /auth/login",
                 "GET /profile/me",
+                "GET /posts",
                 "PUT /profile/me",
                 "POST /profile/me/photo",
                 "GET /products?q=&page=",
@@ -164,6 +172,13 @@ def upload_photo():
         return jsonify({"message": "Missing photo part"}), 400
     profile["photoUrl"] = "https://taskflow.local/mock/photo.jpg"
     return jsonify(profile)
+
+
+@route("/posts", methods=["GET"])
+def posts():
+    if email_from_auth() is None:
+        return unauthorized()
+    return jsonify(POSTS)
 
 
 @route("/products", methods=["GET"])
